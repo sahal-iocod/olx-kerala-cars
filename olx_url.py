@@ -3,6 +3,7 @@ from urllib.parse import quote
 from config import OLX_BASE_URL
 from olx_location import resolve_olx_location
 
+
 def to_int(value):
     if value is None:
         return None
@@ -33,17 +34,57 @@ def clean_value(value):
 
 
 def build_olx_url(filters):
-    location = filters.get("location", "")
-    
+
+    # =====================================================
+    # LOCATION
+    # =====================================================
+
+    location = clean_value(
+        filters.get("location")
+    )
+
+    # Dynamically resolve:
+    #
+    # "kochi"
+    #     ↓
+    # "kochi_g4058873"
+    #
+    # Empty location:
+    #     ↓
+    # "kerala_g2001160"
+
+    location_slug = resolve_olx_location(
+        location
+    )
+
+    base_url = (
+        f"https://www.olx.in/"
+        f"{location_slug}/cars_c84"
+    )
+
+    print(
+        f"📍 Location input: "
+        f"{location or 'Kerala'}"
+    )
+
+    print(
+        f"📍 Resolved location: "
+        f"{location_slug}"
+    )
+
+    # =====================================================
+    # FILTER VALUES
+    # =====================================================
+
     filter_values = []
 
     # =====================================================
     # BRAND
-    # Example:
-    # make_eq_hyundai
     # =====================================================
 
-    brand = clean_value(filters.get("brand"))
+    brand = clean_value(
+        filters.get("brand")
+    )
 
     if brand:
         filter_values.append(
@@ -52,11 +93,11 @@ def build_olx_url(filters):
 
     # =====================================================
     # MODEL
-    # Example:
-    # model_eq_hyundai-accent
     # =====================================================
 
-    model = clean_value(filters.get("model"))
+    model = clean_value(
+        filters.get("model")
+    )
 
     if model:
         filter_values.append(
@@ -65,13 +106,14 @@ def build_olx_url(filters):
 
     # =====================================================
     # FUEL
-    # Example:
-    # petrol_eq_petrol
     # =====================================================
 
-    fuel = clean_value(filters.get("fuel"))
+    fuel = clean_value(
+        filters.get("fuel")
+    )
 
     if fuel:
+
         fuel_map = {
             "petrol": "petrol",
             "diesel": "diesel",
@@ -108,9 +150,11 @@ def build_olx_url(filters):
             "cvt": "cvt",
         }
 
-        transmission_value = transmission_map.get(
-            transmission,
-            transmission
+        transmission_value = (
+            transmission_map.get(
+                transmission,
+                transmission
+            )
         )
 
         filter_values.append(
@@ -133,19 +177,16 @@ def build_olx_url(filters):
         min_price is not None
         and max_price is not None
     ):
-
         filter_values.append(
             f"price_between_{min_price}_to_{max_price}"
         )
 
     elif min_price is not None:
-
         filter_values.append(
             f"price_min_{min_price}"
         )
 
     elif max_price is not None:
-
         filter_values.append(
             f"price_max_{max_price}"
         )
@@ -166,28 +207,22 @@ def build_olx_url(filters):
         min_year is not None
         and max_year is not None
     ):
-
         filter_values.append(
             f"year_between_{min_year}_to_{max_year}"
         )
 
     elif min_year is not None:
-
         filter_values.append(
             f"year_min_{min_year}"
         )
 
     elif max_year is not None:
-
         filter_values.append(
             f"year_max_{max_year}"
         )
 
     # =====================================================
-    # MILEAGE / KM
-    #
-    # Example from your OLX URL:
-    # mileage_between_25000_to_49999
+    # MILEAGE
     # =====================================================
 
     min_km = to_int(
@@ -202,39 +237,35 @@ def build_olx_url(filters):
         min_km is not None
         and max_km is not None
     ):
-
         filter_values.append(
             f"mileage_between_{min_km}_to_{max_km}"
         )
 
     elif min_km is not None:
-
         filter_values.append(
             f"mileage_min_{min_km}"
         )
 
     elif max_km is not None:
-
         filter_values.append(
             f"mileage_max_{max_km}"
         )
 
     # =====================================================
     # KEYWORD
-    #
-    # Keyword handling is intentionally left out for now.
-    # OLX can represent keyword searches differently from
-    # normal filter parameters.
     # =====================================================
 
+    # Leave this empty for now.
+    # We can add OLX keyword search separately.
+
     # =====================================================
-    # BUILD URL
+    # BUILD FINAL URL
     # =====================================================
 
     if not filter_values:
 
         return (
-            f"{OLX_BASE_URL}"
+            f"{base_url}"
             "?sorting=desc-creation"
         )
 
@@ -242,7 +273,12 @@ def build_olx_url(filters):
         filter_values
     )
 
+    encoded_filters = quote(
+        filter_string,
+        safe=","
+    )
+
     return (
-        f"{OLX_BASE_URL}"
-        f"?filter={quote(filter_string, safe=',')}"
+        f"{base_url}"
+        f"?filter={encoded_filters}"
     )
