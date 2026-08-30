@@ -1,97 +1,225 @@
-import time
 import random
 import re
+import time
 from html import unescape
 
 from playwright.sync_api import sync_playwright
 
-from config import OLX_URL, MAX_LISTINGS_TO_CHECK
+from config import MAX_LISTINGS_TO_CHECK
 
 
 def clean_text(value: str | None) -> str:
     if not value:
         return ""
+
     text = unescape(value)
     text = text.replace("\xa0", " ")
+
+    # Remove HTML tags
     text = re.sub(r"<.*?>", " ", text, flags=re.S)
+
+    # Normalize whitespace
     text = re.sub(r"\s+", " ", text)
+
     return text.strip()
 
 
 def strip_html_fragment(value: str | None) -> str:
     if not value:
         return ""
+
     return clean_text(value)
 
 
 def extract_ad_id(url: str) -> str | None:
     """
     Extract OLX listing ID from a URL.
+    Example:
+    https://www.olx.in/item/...-iid-123456789
     """
+
     match = re.search(r"iid-(\d+)", url)
+
     return match.group(1) if match else None
 
 
-def parse_year_km(subtitle: str | None) -> tuple[str | None, str | None]:
+def parse_year_km(
+    subtitle: str | None,
+) -> tuple[str | None, str | None]:
+
     if not subtitle:
         return None, None
 
     cleaned = strip_html_fragment(subtitle)
-    match = re.search(r"(\d{4})\s*[-–]\s*([0-9,]+)\s*km", cleaned, flags=re.I)
+
+    match = re.search(
+        r"(\d{4})\s*[-–]\s*([0-9,]+)\s*km",
+        cleaned,
+        flags=re.I,
+    )
+
     if match:
         year = match.group(1)
         km = match.group(2).replace(",", "")
+
         return year, km
 
     return None, None
 
 
 def extract_span_texts(html: str) -> list[str]:
-    spans = re.findall(r"<span[^>]*>(.*?)</span>", html, flags=re.S | re.I)
-    return [strip_html_fragment(text) for text in spans if strip_html_fragment(text)]
+    """
+    Extract text from span elements.
+    """
+
+    spans = re.findall(
+        r"<span[^>]*>(.*?)</span>",
+        html,
+        flags=re.S | re.I,
+    )
+
+    results = []
+
+    for text in spans:
+        cleaned = strip_html_fragment(text)
+
+        if cleaned:
+            results.append(cleaned)
+
+    return results
 
 
-def parse_listing_card(card_html: str, url: str) -> dict:
-    price = strip_html_fragment(
-        re.search(r'<span[^>]*data-aut-id=["\']itemPrice["\'][^>]*>(.*?)</span>', card_html, flags=re.S | re.I)
-        .group(1)
-        if re.search(r'<span[^>]*data-aut-id=["\']itemPrice["\'][^>]*>(.*?)</span>', card_html, flags=re.S | re.I)
+def parse_listing_card(
+    card_html: str,
+    url: str,
+) -> dict:
+
+    # -------------------------
+    # Price
+    # -------------------------
+
+    price_match = re.search(
+        r'<span[^>]*data-aut-id=["\']itemPrice["\'][^>]*>(.*?)</span>',
+        card_html,
+        flags=re.S | re.I,
+    )
+
+    price = (
+        strip_html_fragment(price_match.group(1))
+        if price_match
         else None
     )
 
-    title_match = re.search(r'<h3[^>]*data-aut-id=["\']itemTitle["\'][^>]*>(.*?)</h3>', card_html, flags=re.S | re.I)
-    title = strip_html_fragment(title_match.group(1)) if title_match else "No title"
+    # -------------------------
+    # Title
+    # -------------------------
 
-    subtitle_match = re.search(r'<div[^>]*data-aut-id=["\']itemSubTitle["\'][^>]*>(.*?)</div>', card_html, flags=re.S | re.I)
-    subtitle = strip_html_fragment(subtitle_match.group(1)) if subtitle_match else ""
+    title_match = re.search(
+        r'<h3[^>]*data-aut-id=["\']itemTitle["\'][^>]*>(.*?)</h3>',
+        card_html,
+        flags=re.S | re.I,
+    )
+
+    title = (
+        strip_html_fragment(title_match.group(1))
+        if title_match
+        else "No title"
+    )
+
+    # -------------------------
+    # Subtitle
+    # -------------------------
+
+    subtitle_match = re.search(
+        r'<div[^>]*data-aut-id=["\']itemSubTitle["\'][^>]*>(.*?)</div>',
+        card_html,
+        flags=re.S | re.I,
+    )
+
+    subtitle = (
+        strip_html_fragment(subtitle_match.group(1))
+        if subtitle_match
+        else ""
+    )
+
     year, km = parse_year_km(subtitle)
 
-    details_match = re.search(r'<div[^>]*data-aut-id=["\']itemDetails["\'][^>]*>(.*?)</div>', card_html, flags=re.S | re.I)
-    details_html = details_match.group(1) if details_match else ""
-    details_text = strip_html_fragment(details_html)
+    # -------------------------
+    # Details
+    # -------------------------
+
+    details_match = re.search(
+        r'<div[^>]*data-aut-id=["\']itemDetails["\'][^>]*>(.*?)</div>',
+        card_html,
+        flags=re.S | re.I,
+    )
+
+    details_html = (
+        details_match.group(1)
+        if details_match
+        else ""
+    )
+
     span_values = extract_span_texts(details_html)
+
+    # -------------------------
+    # Location / Posted
+    # -------------------------
 
     location = "Kerala"
     posted = "Recently"
 
     if span_values:
+
         for value in span_values:
-            if value and not re.fullmatch(r"(?:Today|Yesterday|\d{1,2}\s+[A-Za-z]{3,})", value, flags=re.I):
+
+            if value and not re.fullmatch(
+                r"(?:Today|Yesterday|\d{1,2}\s+[A-Za-z]{3,})",
+                value,
+                flags=re.I,
+            ):
                 location = value
                 break
+
         for value in span_values:
-            if re.fullmatch(r"(?:Today|Yesterday|\d{1,2}\s+[A-Za-z]{3,})", value, flags=re.I):
+
+            if re.fullmatch(
+                r"(?:Today|Yesterday|\d{1,2}\s+[A-Za-z]{3,})",
+                value,
+                flags=re.I,
+            ):
                 posted = value
                 break
 
+    # -------------------------
+    # Fallback location
+    # -------------------------
+
     if not location or location == "Kerala":
-        location_match = re.search(r"<span[^>]*>(.*?)</span>", details_html, flags=re.S | re.I)
+
+        location_match = re.search(
+            r"<span[^>]*>(.*?)</span>",
+            details_html,
+            flags=re.S | re.I,
+        )
+
         if location_match:
-            location = strip_html_fragment(location_match.group(1))
+            location = strip_html_fragment(
+                location_match.group(1)
+            )
+
+    # -------------------------
+    # Ad ID
+    # -------------------------
 
     ad_id = extract_ad_id(url)
+
     if not ad_id:
         ad_id = "unknown"
+
+    # -------------------------
+    # Return listing
+    # -------------------------
 
     return {
         "id": ad_id,
@@ -105,73 +233,171 @@ def parse_listing_card(card_html: str, url: str) -> dict:
     }
 
 
-def scrape_recent_cars() -> list[dict]:
+def scrape_recent_cars(url: str) -> list[dict]:
+    """
+    Scrape recent cars from the supplied OLX URL.
+
+    The URL is generated by olx_url.py
+    based on the filters configured from the web UI.
+    """
+
     cars = []
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
+
+        browser = p.chromium.launch(
+            headless=False
+        )
 
         context = browser.new_context(
-            viewport={"width": 1280, "height": 800},
+            viewport={
+                "width": 1280,
+                "height": 800,
+            }
         )
 
         page = context.new_page()
 
         try:
-            print("🌐 Opening OLX Kerala cars page...")
+
+            # -------------------------
+            # Open filtered OLX URL
+            # -------------------------
+
+            print("🌐 Opening OLX filtered cars page...")
+            print(f"🔗 URL: {url}")
 
             page.goto(
-                OLX_URL,
+                url,
                 wait_until="domcontentloaded",
                 timeout=60000,
             )
 
-            time.sleep(random.uniform(4, 7))
+            # Give OLX some time to load listings
+            time.sleep(
+                random.uniform(4, 7)
+            )
 
-            print(f"🔗 Current URL: {page.url}")
-            print(f"📄 Page title: {page.title()}")
+            print(
+                f"🔗 Current URL: {page.url}"
+            )
 
+            print(
+                f"📄 Page title: {page.title()}"
+            )
+
+            # Additional wait for dynamic content
             page.wait_for_timeout(5000)
+
+            # -------------------------
+            # Save debug HTML
+            # -------------------------
 
             html = page.content()
 
-            with open("olx_debug.html", "w", encoding="utf-8") as f:
+            with open(
+                "olx_debug.html",
+                "w",
+                encoding="utf-8",
+            ) as f:
                 f.write(html)
 
-            print("💾 Saved page HTML to: olx_debug.html")
+            print(
+                "💾 Saved page HTML to: olx_debug.html"
+            )
 
-            links = page.locator("a[href*='iid-']").all()
+            # -------------------------
+            # Find listing links
+            # -------------------------
 
-            print(f"🔗 Found {len(links)} OLX listing links on page")
+            links = page.locator(
+                "a[href*='iid-']"
+            ).all()
+
+            print(
+                f"🔗 Found {len(links)} OLX listing links on page"
+            )
+
+            # -------------------------
+            # Parse listings
+            # -------------------------
+
+            seen_ids = set()
 
             for link in links:
+
                 try:
-                    href = link.get_attribute("href")
+
+                    href = link.get_attribute(
+                        "href"
+                    )
+
                     if not href:
                         continue
 
-                    full_url = href if href.startswith("http") else f"https://www.olx.in{href}"
-                    ad_id = extract_ad_id(full_url)
+                    # Convert relative URL to absolute URL
+                    full_url = (
+                        href
+                        if href.startswith("http")
+                        else f"https://www.olx.in{href}"
+                    )
+
+                    # Extract listing ID
+                    ad_id = extract_ad_id(
+                        full_url
+                    )
+
                     if not ad_id:
                         continue
 
-                    card_html = link.evaluate("el => el.outerHTML")
-                    car = parse_listing_card(card_html, full_url)
-                    if car["title"] and car["title"] != "No title":
+                    # Avoid duplicate listing cards
+                    if ad_id in seen_ids:
+                        continue
+
+                    seen_ids.add(ad_id)
+
+                    # Get HTML for listing element
+                    card_html = link.evaluate(
+                        "el => el.outerHTML"
+                    )
+
+                    # Parse listing
+                    car = parse_listing_card(
+                        card_html,
+                        full_url,
+                    )
+
+                    if (
+                        car["title"]
+                        and car["title"] != "No title"
+                    ):
                         cars.append(car)
 
-                    if len(cars) >= MAX_LISTINGS_TO_CHECK:
+                    # Stop after required number
+                    if (
+                        len(cars)
+                        >= MAX_LISTINGS_TO_CHECK
+                    ):
                         break
 
                 except Exception as e:
-                    print(f"⚠️ Error reading listing: {e}")
 
-            print(f"📦 Found {len(cars)} real OLX listings")
+                    print(
+                        f"⚠️ Error reading listing: {e}"
+                    )
+
+            print(
+                f"📦 Found {len(cars)} real OLX listings"
+            )
 
         except Exception as e:
-            print(f"❌ Scraping error: {e}")
+
+            print(
+                f"❌ Scraping error: {e}"
+            )
 
         finally:
+
             browser.close()
 
     return cars

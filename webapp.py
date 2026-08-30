@@ -6,7 +6,9 @@ from flask import Flask, jsonify, render_template_string, request
 from filters import matches_filters
 
 app = Flask(__name__)
-FILTERS_FILE = Path("filters.json")
+
+BASE_DIR = Path(__file__).resolve().parent
+FILTERS_FILE = BASE_DIR / "filters.json"
 
 DEFAULT_FILTERS = {
     "location": "",
