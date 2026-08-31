@@ -1,4 +1,6 @@
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template_string, request
@@ -9,6 +11,63 @@ app = Flask(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
 FILTERS_FILE = BASE_DIR / "filters.json"
+BOT_LOG_FILE = BASE_DIR / "bot.log"
+
+# The notifier (main.py) run as a child process of the web app,
+# so everything is controlled from one place.
+_bot_process = None
+
+
+def bot_running() -> bool:
+    return _bot_process is not None and _bot_process.poll() is None
+
+
+def start_bot() -> str:
+    global _bot_process
+
+    if bot_running():
+        return "Bot is already running."
+
+    log = BOT_LOG_FILE.open("a", encoding="utf-8")
+    log.write("\n===== bot started from web UI =====\n")
+    log.flush()
+
+    # -u: unbuffered output so the log view updates live
+    _bot_process = subprocess.Popen(
+        [sys.executable, "-u", str(BASE_DIR / "main.py")],
+        cwd=str(BASE_DIR),
+        stdout=log,
+        stderr=subprocess.STDOUT,
+    )
+
+    return "Bot started."
+
+
+def stop_bot() -> str:
+    global _bot_process
+
+    if not bot_running():
+        _bot_process = None
+        return "Bot is not running."
+
+    _bot_process.terminate()
+    try:
+        _bot_process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        _bot_process.kill()
+
+    _bot_process = None
+    return "Bot stopped."
+
+
+def bot_log_tail(lines: int = 25) -> str:
+    if not BOT_LOG_FILE.exists():
+        return ""
+    try:
+        content = BOT_LOG_FILE.read_text(encoding="utf-8", errors="replace")
+        return "\n".join(content.splitlines()[-lines:])
+    except Exception:
+        return ""
 
 DEFAULT_FILTERS = {
     "location": "",
@@ -64,11 +123,28 @@ HTML_PAGE = """
     button.secondary { background: #475569; }
     .status { margin-top: 16px; font-weight: 600; }
     .note { color: #4b5563; margin-top: 8px; }
+    .bot-panel { border: 1px solid #dfe6ee; border-radius: 10px; padding: 16px; margin-bottom: 24px; background: #f8fafc; }
+    .bot-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+    .dot.on { background: #16a34a; box-shadow: 0 0 0 4px rgba(22,163,74,.15); }
+    .dot.off { background: #9ca3af; }
+    .bot-log { background: #0f172a; color: #cbd5e1; border-radius: 8px; padding: 12px; font-size: 12px; line-height: 1.5; max-height: 220px; overflow: auto; white-space: pre-wrap; margin: 12px 0 0; }
+    .bot-log:empty { display: none; }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>OLX Car Filter Manager</h1>
+
+    <div class="bot-panel">
+      <div class="bot-row">
+        <span id="botDot" class="dot off"></span>
+        <span id="botState">Checking…</span>
+        <button type="button" id="startBtn">Start Bot</button>
+        <button type="button" class="secondary" id="stopBtn">Stop Bot</button>
+      </div>
+      <pre id="botLog" class="bot-log"></pre>
+    </div>
     <form id="filterForm">
       <div class="grid">
         <div class="field"><label>Location</label><input name="location" placeholder="e.g. kochi, thrissur, kollam" /></div>
@@ -135,6 +211,42 @@ HTML_PAGE = """
       await loadFilters();
     });
 
+    // ---- bot controls ----
+    const botDot = document.getElementById('botDot');
+    const botState = document.getElementById('botState');
+    const botLog = document.getElementById('botLog');
+
+    const refreshBot = async () => {
+      try {
+        const response = await fetch('/api/bot/status');
+        const data = await response.json();
+        botDot.className = 'dot ' + (data.running ? 'on' : 'off');
+        botState.textContent = data.running ? 'Bot is running' : 'Bot is stopped';
+        const atBottom = botLog.scrollTop + botLog.clientHeight >= botLog.scrollHeight - 10;
+        botLog.textContent = data.log || '';
+        if (atBottom) botLog.scrollTop = botLog.scrollHeight;
+      } catch (e) {
+        botState.textContent = 'Web app unreachable';
+      }
+    };
+
+    document.getElementById('startBtn').addEventListener('click', async () => {
+      const response = await fetch('/api/bot/start', { method: 'POST' });
+      const result = await response.json();
+      statusBox.textContent = result.message;
+      await refreshBot();
+    });
+
+    document.getElementById('stopBtn').addEventListener('click', async () => {
+      const response = await fetch('/api/bot/stop', { method: 'POST' });
+      const result = await response.json();
+      statusBox.textContent = result.message;
+      await refreshBot();
+    });
+
+    refreshBot();
+    setInterval(refreshBot, 4000);
+
     loadFilters();
   </script>
 </body>
@@ -167,6 +279,21 @@ def reset_filters():
     return jsonify({"message": "Filters reset to default."})
 
 
+@app.route("/api/bot/start", methods=["POST"])
+def bot_start_route():
+    return jsonify({"message": start_bot(), "running": bot_running()})
+
+
+@app.route("/api/bot/stop", methods=["POST"])
+def bot_stop_route():
+    return jsonify({"message": stop_bot(), "running": bot_running()})
+
+
+@app.route("/api/bot/status")
+def bot_status_route():
+    return jsonify({"running": bot_running(), "log": bot_log_tail()})
+
+
 @app.route("/api/test-match")
 def test_match():
     sample = {
@@ -185,4 +312,6 @@ if __name__ == "__main__":
 
     # Port 5000 is taken by macOS AirPlay Receiver, so default to 5001.
     port = int(os.getenv("WEBAPP_PORT", "5001"))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    # No reloader: it would restart the app on code edits and
+    # orphan the bot child process.
+    app.run(host="0.0.0.0", port=port, debug=True, use_reloader=False)
