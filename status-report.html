@@ -1,0 +1,214 @@
+<title>OLX Kerala Car Notifier</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --paper: #FAF8F4;
+    --card: #FFFFFF;
+    --ink: #20262B;
+    --ink-soft: #56616B;
+    --line: #E4DFD6;
+    --accent: #0E6B5E;
+    --accent-soft: #E3EFEC;
+    --good: #2E7D46;
+    --good-bg: #E6F2E9;
+    --warn: #A8730A;
+    --warn-bg: #F7EEDD;
+    --hold: #8A6FA8;
+    --hold-bg: #EFE9F5;
+    --mono-bg: #F1EEE7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #171C1F;
+      --card: #1F2529;
+      --ink: #E8E6E0;
+      --ink-soft: #9BA6AD;
+      --line: #333B41;
+      --accent: #4FB3A2;
+      --accent-soft: #1E3531;
+      --good: #6DC08A;
+      --good-bg: #21362A;
+      --warn: #D9A94E;
+      --warn-bg: #38301D;
+      --hold: #B49BD1;
+      --hold-bg: #302A3B;
+      --mono-bg: #262D32;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #171C1F;
+    --card: #1F2529;
+    --ink: #E8E6E0;
+    --ink-soft: #9BA6AD;
+    --line: #333B41;
+    --accent: #4FB3A2;
+    --accent-soft: #1E3531;
+    --good: #6DC08A;
+    --good-bg: #21362A;
+    --warn: #D9A94E;
+    --warn-bg: #38301D;
+    --hold: #B49BD1;
+    --hold-bg: #302A3B;
+    --mono-bg: #262D32;
+  }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Public Sans", -apple-system, "Segoe UI", sans-serif;
+    font-size: 15.5px;
+    line-height: 1.62;
+    margin: 0;
+    padding: 48px 20px 80px;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  h1, h2, h3 { font-family: "Archivo", "Public Sans", sans-serif; text-wrap: balance; }
+  h1 { font-size: 34px; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 6px; }
+  h2 { font-size: 21px; font-weight: 600; margin: 48px 0 14px; padding-top: 26px; border-top: 1px solid var(--line); }
+  h3 { font-size: 16px; font-weight: 600; margin: 22px 0 6px; }
+  .kicker {
+    font-size: 12px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 10px;
+  }
+  .lede { color: var(--ink-soft); max-width: 62ch; margin: 0 0 8px; }
+  .stamp { font-family: "JetBrains Mono", monospace; font-size: 12px; color: var(--ink-soft); }
+  code, .mono {
+    font-family: "JetBrains Mono", monospace; font-size: 0.86em;
+    background: var(--mono-bg); border-radius: 4px; padding: 1px 5px;
+  }
+  p { max-width: 68ch; }
+
+  /* pipeline strip */
+  .pipeline {
+    display: flex; align-items: stretch; gap: 0; margin: 28px 0 8px;
+    overflow-x: auto; padding-bottom: 6px;
+  }
+  .stage {
+    flex: 1; min-width: 118px; background: var(--card); border: 1px solid var(--line);
+    padding: 10px 12px; position: relative;
+  }
+  .stage + .stage { border-left: none; }
+  .stage:first-child { border-radius: 8px 0 0 8px; }
+  .stage:last-child { border-radius: 0 8px 8px 0; }
+  .stage .s-name { font-family: "Archivo", sans-serif; font-weight: 600; font-size: 13.5px; }
+  .stage .s-what { font-size: 12px; color: var(--ink-soft); line-height: 1.45; margin-top: 2px; }
+  .stage::after {
+    content: "→"; position: absolute; right: -7px; top: 50%; transform: translateY(-50%);
+    color: var(--accent); font-weight: 700; z-index: 1; background: var(--card);
+  }
+  .stage:last-child::after { content: none; }
+
+  /* module board */
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+  .board-scroll { overflow-x: auto; }
+  th {
+    text-align: left; font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--ink-soft); font-weight: 600; padding: 8px 12px; border-bottom: 2px solid var(--line);
+  }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td:first-child { white-space: nowrap; }
+  .pill {
+    display: inline-block; font-family: "Archivo", sans-serif; font-size: 11.5px; font-weight: 600;
+    letter-spacing: 0.04em; padding: 2px 9px; border-radius: 99px; white-space: nowrap;
+  }
+  .pill.good { color: var(--good); background: var(--good-bg); }
+  .pill.warn { color: var(--warn); background: var(--warn-bg); }
+  .pill.hold { color: var(--hold); background: var(--hold-bg); }
+
+  /* roadmap tiers */
+  .tier {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 18px 22px; margin: 14px 0;
+  }
+  .tier-label {
+    font-family: "Archivo", sans-serif; font-size: 12px; font-weight: 700;
+    letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent);
+  }
+  .tier h3 { margin-top: 4px; }
+  .tier ul { margin: 8px 0 2px; padding-left: 20px; }
+  .tier li { margin: 7px 0; max-width: 66ch; }
+  .tier li strong { font-weight: 600; }
+  .why { color: var(--ink-soft); }
+
+  ul.plain { padding-left: 20px; }
+  ul.plain li { margin: 6px 0; max-width: 66ch; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <div class="kicker">Project status &amp; roadmap</div>
+  <h1>OLX Kerala Car Notifier</h1>
+  <p class="lede">A self-hosted alert system that watches OLX for newly posted cars matching your filters and pings you on Telegram — before other buyers get there.</p>
+  <div class="stamp">Status as of 31 Aug 2026 · 22/22 tests passing · verified against live OLX</div>
+
+  <h2>How a check runs (every 5 min ± jitter)</h2>
+  <div class="pipeline">
+    <div class="stage"><div class="s-name">Filters</div><div class="s-what">Web UI saves to filters.json — reloaded each cycle</div></div>
+    <div class="stage"><div class="s-name">Location</div><div class="s-what">City name → OLX slug, cached after first resolve</div></div>
+    <div class="stage"><div class="s-name">Fetch</div><div class="s-what">One JSON API call from inside a real-Chrome page, 100 newest</div></div>
+    <div class="stage"><div class="s-name">Refine</div><div class="s-what">Strict location by city ID + model / transmission / seller checks</div></div>
+    <div class="stage"><div class="s-name">Dedupe</div><div class="s-what">seen_ads.json, pruned after 60 days</div></div>
+    <div class="stage"><div class="s-name">Notify</div><div class="s-what">Telegram message with price, year, km, seller type</div></div>
+  </div>
+
+  <h2>Module board</h2>
+  <div class="board-scroll">
+  <table>
+    <tr><th>Module</th><th>State</th><th>Notes</th></tr>
+    <tr><td><code>main.py</code></td><td><span class="pill good">Working</span></td><td>5-min scheduler with ±90s jitter and exponential backoff after failed checks (skip 1 → 3 → 7 cycles).</td></tr>
+    <tr><td><code>webapp.py</code></td><td><span class="pill good">Working</span></td><td>Filter manager on port 5001: location, price, year, km, brand, model, fuel, transmission, seller type, keyword. Changes apply next cycle, no restart.</td></tr>
+    <tr><td><code>scraper.py</code></td><td><span class="pill good">Working</span></td><td>Headless real Chrome + normal user agent (passes OLX's block). Primary source is OLX's internal JSON API; HTML parsing is the automatic fallback. Session cookies persist between runs.</td></tr>
+    <tr><td><code>olx_api.py</code></td><td><span class="pill good">Working</span></td><td>Builds the API query — verified params for make, price, year, mileage, fuel, keyword. Brand aliases ("maruthi" → maruti-suzuki).</td></tr>
+    <tr><td><code>olx_location.py</code></td><td><span class="pill good">Working</span></td><td>Resolves city → slug by reading the link href (no fragile clicking); cached in location_cache.json.</td></tr>
+    <tr><td><code>filters.py</code></td><td><span class="pill good">Working</span></td><td>Local safety net for what the API can't filter server-side: model, transmission, seller type — using structured fields, not title guessing.</td></tr>
+    <tr><td>Strict location</td><td><span class="pill good">Working</span></td><td>OLX pads searches with nearby districts; listings are now matched by city ID (74 of 100 dropped in the live Kozhikode test).</td></tr>
+    <tr><td><code>notifier.py</code> / <code>storage.py</code></td><td><span class="pill good">Working</span></td><td>Telegram HTML messages incl. seller line; seen-ads store prunes entries older than 60 days.</td></tr>
+    <tr><td>Rare-car filter</td><td><span class="pill hold">On hold</span></td><td>Started (rarity = model's total listing count), paused mid-build when the location bug took priority.</td></tr>
+    <tr><td>24/7 operation</td><td><span class="pill warn">Gap</span></td><td>Runs only while the terminal is open; Mac sleep pauses it. Headless mode makes a service/VPS possible — not yet set up.</td></tr>
+  </table>
+  </div>
+
+  <h2>Known limitations</h2>
+  <ul class="plain">
+    <li>Model and transmission can't be filtered server-side by OLX's API — enforced locally instead (works, but rare models depend on being inside the newest 100 fetched).</li>
+    <li>First run after changing filters sends a burst of notifications for the existing backlog.</li>
+    <li>The HTML fallback path has no seller or location-ID data, so those checks pass everything through when the API is down.</li>
+    <li>KYC-verified sellers are rare in the live data — the "verified" filter options may match almost nothing.</li>
+    <li>The old Telegram token is still in git history; regenerate it via BotFather before the repo ever goes public.</li>
+    <li>The web UI has no authentication and listens on all interfaces — fine at home, not on a public server.</li>
+  </ul>
+
+  <h2>Roadmap</h2>
+
+  <div class="tier">
+    <div class="tier-label">Tier 1 · Do next</div>
+    <h3>Make it dependable</h3>
+    <ul>
+      <li><strong>Run as a service</strong> (launchd on the Mac mini, or a small VPS). <span class="why">Everything else is pointless if the bot is off when the right car is posted.</span></li>
+      <li><strong>Health alerts</strong> — a Telegram message when checks keep failing. <span class="why">Silent death is the main failure mode of any scraper.</span></li>
+      <li><strong>Finish the rare-car filter</strong> — the paused module. <span class="why">Already half-built and scoped.</span></li>
+    </ul>
+  </div>
+
+  <div class="tier">
+    <div class="tier-label">Tier 2 · Big value adds</div>
+    <h3>Better alerts, wider view</h3>
+    <ul>
+      <li><strong>Photos in Telegram</strong> — the API already returns image URLs; <code>sendPhoto</code> makes alerts instantly judgeable.</li>
+      <li><strong>Multiple filter profiles</strong> — watch a Swift 2015 and a rare-car search at the same time, each labeled in its alerts.</li>
+      <li><strong>One-time full market sweep</strong> — paginate everything matching a filter once, on demand, to see the whole market before alerts take over.</li>
+      <li><strong>Nearby-areas toggle</strong> — opt back into OLX's relaxed radius when strict location is too narrow.</li>
+    </ul>
+  </div>
+
+  <div class="tier">
+    <div class="tier-label">Tier 3 · Later</div>
+    <h3>From notifier to market tool</h3>
+    <ul>
+      <li><strong>SQLite + price history</strong> — keep every sighting; flag re-posts and price drops on the same car.</li>
+      <li><strong>Deal scoring</strong> — compare a listing's price to the average for its model/year and mark underpriced ones.</li>
+      <li><strong>Telegram bot commands</strong> — change filters, pause, or ask for status from chat instead of the web UI.</li>
+      <li><strong>Results dashboard</strong> — a page in the web app showing matched cars with photos, instead of scrolling Telegram.</li>
+    </ul>
+  </div>
+</div>
