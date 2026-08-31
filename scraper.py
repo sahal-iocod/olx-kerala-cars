@@ -342,6 +342,22 @@ def parse_api_listing(item: dict) -> dict | None:
                 location = locations_resolved[key]
                 break
 
+    # ---- location ids (for strict location matching) ----
+    # OLX "relaxes" searches by padding results with nearby
+    # districts; these ids let us enforce the chosen location.
+    location_ids = []
+
+    for loc in item.get("locations") or []:
+        if isinstance(loc, dict):
+            for key in ("region_id", "city_id", "district_id"):
+                if loc.get(key):
+                    location_ids.append(str(loc[key]))
+
+    if isinstance(locations_resolved, dict):
+        for key, value in locations_resolved.items():
+            if key.endswith("_id") and value:
+                location_ids.append(str(value))
+
     # ---- seller info ----
     is_dealer = bool(
         item.get("is_business")
@@ -372,6 +388,7 @@ def parse_api_listing(item: dict) -> dict | None:
         "model": model,
         "seller": seller,
         "verified": verified,
+        "location_ids": location_ids,
         "location": location or "Kerala",
         "posted": str(posted),
         "url": f"https://www.olx.in/item/iid-{ad_id}",
@@ -421,6 +438,23 @@ def fetch_api_listings(page, filters, location_slug):
     except Exception as e:
         print(f"⚠️ OLX API call failed: {e}")
         return None
+
+
+def in_selected_location(car: dict, location_id: str | None) -> bool:
+    """
+    True when the listing really belongs to the requested
+    location. Listings without location ids (HTML fallback)
+    pass rather than being wrongly rejected.
+    """
+    if not location_id:
+        return True
+
+    ids = car.get("location_ids")
+
+    if not ids:
+        return True
+
+    return location_id in ids
 
 
 def scrape_recent_cars(
@@ -637,6 +671,29 @@ def scrape_recent_cars(
                     cars.append(car)
 
                 parsed_count = len(cars)
+
+                # Strict location: OLX pads searches with
+                # listings from nearby districts ("relaxed"
+                # results) — drop anything not actually in
+                # the requested location.
+                if location_slug:
+                    from olx_api import location_id_from_slug
+
+                    loc_id = location_id_from_slug(location_slug)
+
+                    before = len(cars)
+                    cars = [
+                        car
+                        for car in cars
+                        if in_selected_location(car, loc_id)
+                    ]
+
+                    if before - len(cars):
+                        print(
+                            f"📍 Dropped {before - len(cars)} "
+                            f"listings outside the selected "
+                            f"location"
+                        )
 
                 # Apply the local filters BEFORE capping, so
                 # filters the API can't handle server-side

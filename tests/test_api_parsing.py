@@ -74,3 +74,31 @@ def test_prune_seen_ads_drops_old_entries():
 
     assert "fresh" in pruned
     assert "stale" not in pruned
+
+
+def test_location_ids_extracted_and_strictly_matched():
+    from scraper import in_selected_location
+
+    item = {
+        "id": 7,
+        "title": "Maruti Swift",
+        "locations": [
+            {"region_id": "2001160", "city_id": "4058877", "district_id": "99"}
+        ],
+        "locations_resolved": {"ADMIN_LEVEL_3_id": "123", "ADMIN_LEVEL_3_name": "Kozhikode"},
+    }
+
+    car = parse_api_listing(item)
+
+    assert "4058877" in car["location_ids"]
+    assert "2001160" in car["location_ids"]
+
+    # In Kozhikode -> kept; a Malappuram car -> dropped
+    assert in_selected_location(car, "4058877") is True
+    malappuram = dict(car, location_ids=["2001160", "4058900"])
+    assert in_selected_location(malappuram, "4058877") is False
+    # Kerala-wide search keeps both
+    assert in_selected_location(malappuram, "2001160") is True
+    # No filter / no data -> pass
+    assert in_selected_location(car, None) is True
+    assert in_selected_location({"title": "x"}, "4058877") is True
