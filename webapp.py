@@ -169,4 +169,8 @@ def test_match():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    import os
+
+    # Port 5000 is taken by macOS AirPlay Receiver, so default to 5001.
+    port = int(os.getenv("WEBAPP_PORT", "5001"))
+    app.run(host="0.0.0.0", port=port, debug=True)

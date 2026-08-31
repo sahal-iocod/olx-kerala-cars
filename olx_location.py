@@ -103,17 +103,22 @@ def resolve_olx_location(location):
 
 def _resolve_via_browser(location):
 
-    from scraper import launch_browser
+    from scraper import USER_AGENT, launch_browser
 
     with sync_playwright() as p:
 
         browser = launch_browser(p)
 
+        # The normal user agent is required: with the default
+        # "HeadlessChrome" UA, OLX kills the connection
+        # (ERR_HTTP2_PROTOCOL_ERROR).
         context = browser.new_context(
             viewport={
                 "width": 1280,
                 "height": 800,
-            }
+            },
+            user_agent=USER_AGENT,
+            locale="en-IN",
         )
 
         page = context.new_page()
@@ -298,7 +303,42 @@ def _resolve_via_browser(location):
             )
 
             # =================================================
-            # Find location suggestion
+            # Preferred: read the slug straight out of a
+            # matching link's href — no clicking involved.
+            # (e.g. "Kochi (4,273)" -> /kochi_g4058873/cars_c84)
+            # =================================================
+
+            anchors = page.locator(
+                "a",
+                has_text=re.compile(
+                    re.escape(location),
+                    re.IGNORECASE,
+                ),
+            )
+
+            for i in range(min(anchors.count(), 10)):
+
+                try:
+                    href = (
+                        anchors.nth(i).get_attribute("href")
+                        or ""
+                    )
+                except Exception:
+                    continue
+
+                if href.startswith("/"):
+                    href = f"https://www.olx.in{href}"
+
+                slug = extract_location_slug(href)
+
+                if slug:
+                    print(
+                        f"✅ Resolved location from link: {slug}"
+                    )
+                    return slug
+
+            # =================================================
+            # Fallback: click a suggestion
             # =================================================
 
             print(
@@ -360,8 +400,12 @@ def _resolve_via_browser(location):
                         f"📍 Suggestion: {text}"
                     )
 
-                    item.click(
-                        timeout=3000
+                    # JS click: works even when the element
+                    # sits outside the viewport or behind
+                    # an overlay (normal click times out
+                    # there in headless mode).
+                    item.evaluate(
+                        "el => el.click()"
                     )
 
                     clicked_suggestion = True
