@@ -38,6 +38,8 @@ def test_matches_filters_when_location_blank_uses_all():
         "year": "2020",
         "km": "45000",
         "location": "Thiruvananthapuram",
+        "fuel": "Diesel",
+        "transmission": "Manual",
     }
 
     filters = {
@@ -54,6 +56,7 @@ def test_matches_filters_when_location_blank_uses_all():
         "keyword": "swift",
     }
 
+    # Structured fields say Diesel/Manual, filter wants petrol/automatic
     assert matches_filters(car, filters) is False
 
     filters["fuel"] = ""
@@ -61,3 +64,42 @@ def test_matches_filters_when_location_blank_uses_all():
     filters["keyword"] = "swift"
     filters["brand"] = "maruti"
     assert matches_filters(car, filters) is True
+
+
+def test_fuel_filter_does_not_drop_car_without_fuel_info():
+    # Title doesn't mention fuel and there is no structured
+    # fuel field — the car must NOT be rejected.
+    car = {
+        "title": "Hyundai Creta 2015",
+        "price": "₹ 7,00,000",
+        "year": "2015",
+        "km": "80000",
+        "location": "Kochi",
+    }
+    filters = {"fuel": "diesel"}
+
+    assert matches_filters(car, filters) is True
+
+
+def test_fuel_filter_drops_car_with_conflicting_title():
+    car = {
+        "title": "Hyundai Creta Petrol 2015",
+        "price": "₹ 7,00,000",
+        "year": "2015",
+        "km": "80000",
+        "location": "Kochi",
+    }
+    filters = {"fuel": "diesel"}
+
+    assert matches_filters(car, filters) is False
+
+
+def test_structured_fuel_field_is_preferred_over_title():
+    car = {
+        "title": "Hyundai Creta 2015",
+        "fuel": "Diesel",
+        "price": "₹ 7,00,000",
+    }
+
+    assert matches_filters(car, {"fuel": "diesel"}) is True
+    assert matches_filters(car, {"fuel": "petrol"}) is False

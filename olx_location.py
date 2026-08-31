@@ -1,10 +1,30 @@
+import json
 import re
-import time
 
 from playwright.sync_api import sync_playwright
 
+from config import LOCATION_CACHE_FILE
+
 
 DEFAULT_LOCATION = "kerala_g2001160"
+
+
+def load_location_cache() -> dict:
+    if not LOCATION_CACHE_FILE.exists():
+        return {}
+    try:
+        with LOCATION_CACHE_FILE.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        if isinstance(data, dict):
+            return data
+        return {}
+    except Exception:
+        return {}
+
+
+def save_location_cache(cache: dict):
+    with LOCATION_CACHE_FILE.open("w", encoding="utf-8") as fh:
+        json.dump(cache, fh, indent=2, ensure_ascii=False)
 
 
 def extract_location_slug(url):
@@ -55,15 +75,39 @@ def resolve_olx_location(location):
 
         return DEFAULT_LOCATION
 
+    # =====================================================
+    # Cached location = no browser needed
+    # =====================================================
+
+    cache_key = location.lower()
+    cache = load_location_cache()
+
+    if cache_key in cache:
+        print(
+            f"📍 Location from cache: "
+            f"{location} -> {cache[cache_key]}"
+        )
+        return cache[cache_key]
+
     print(
         f"📍 Resolving OLX location: {location}"
     )
 
+    slug = _resolve_via_browser(location)
+
+    cache[cache_key] = slug
+    save_location_cache(cache)
+
+    return slug
+
+
+def _resolve_via_browser(location):
+
+    from scraper import launch_browser
+
     with sync_playwright() as p:
 
-        browser = p.chromium.launch(
-            headless=False
-        )
+        browser = launch_browser(p)
 
         context = browser.new_context(
             viewport={

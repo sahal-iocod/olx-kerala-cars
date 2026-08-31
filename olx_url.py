@@ -33,7 +33,7 @@ def clean_value(value):
     return str(value).strip().lower()
 
 
-def build_olx_url(filters):
+def build_olx_url(filters, location_slug=None):
 
     # =====================================================
     # LOCATION
@@ -43,7 +43,7 @@ def build_olx_url(filters):
         filters.get("location")
     )
 
-    # Dynamically resolve:
+    # Dynamically resolve (cached after first time):
     #
     # "kochi"
     #     ↓
@@ -53,14 +53,26 @@ def build_olx_url(filters):
     #     ↓
     # "kerala_g2001160"
 
-    location_slug = resolve_olx_location(
-        location
-    )
+    if location_slug is None:
+        location_slug = resolve_olx_location(
+            location
+        )
 
     base_url = (
         f"https://www.olx.in/"
         f"{location_slug}/cars_c84"
     )
+
+    # =====================================================
+    # KEYWORD (part of the URL path on OLX)
+    # =====================================================
+
+    keyword = clean_value(
+        filters.get("keyword")
+    )
+
+    if keyword:
+        base_url += f"/q-{quote(keyword)}"
 
     print(
         f"📍 Location input: "
@@ -252,14 +264,11 @@ def build_olx_url(filters):
         )
 
     # =====================================================
-    # KEYWORD
-    # =====================================================
-
-    # Leave this empty for now.
-    # We can add OLX keyword search separately.
-
-    # =====================================================
     # BUILD FINAL URL
+    #
+    # sorting=desc-creation (newest first) is always
+    # included — it is the whole point of a new-listing
+    # alerter, with or without filters.
     # =====================================================
 
     if not filter_values:
@@ -281,4 +290,5 @@ def build_olx_url(filters):
     return (
         f"{base_url}"
         f"?filter={encoded_filters}"
+        "&sorting=desc-creation"
     )

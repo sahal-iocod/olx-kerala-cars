@@ -85,17 +85,36 @@ def matches_filters(car: dict, filters: dict) -> bool:
     if location_filter and not text_matches_any(f"{location} {title}", [location_filter]):
         return False
 
+    # For brand/fuel/transmission, prefer the structured field
+    # from the API listing when present; the title alone often
+    # doesn't mention fuel or transmission, and filtering on it
+    # would wrongly drop valid cars.
     brand_filter = normalize_text(filters.get("brand", ""))
-    if brand_filter and not text_matches_any(title, [brand_filter]):
-        return False
+    if brand_filter:
+        brand_value = normalize_text(car.get("brand") or "")
+        haystack = brand_value if brand_value else title
+        if not text_matches_any(haystack, [brand_filter]):
+            return False
 
     fuel_filter = normalize_text(filters.get("fuel", ""))
-    if fuel_filter and not text_matches_any(title, transmission_aliases(fuel_filter)):
-        return False
+    if fuel_filter:
+        fuel_value = normalize_text(car.get("fuel") or "")
+        if fuel_value:
+            if not text_matches_any(fuel_value, transmission_aliases(fuel_filter)):
+                return False
+        # No structured fuel data: only reject when the title
+        # explicitly names a different fuel type.
+        elif title and not text_matches_any(title, transmission_aliases(fuel_filter)):
+            other_fuels = {"petrol", "diesel", "cng", "electric", "hybrid", "lpg"} - {fuel_filter}
+            if any(f in title for f in other_fuels):
+                return False
 
     transmission_filter = normalize_text(filters.get("transmission", ""))
-    if transmission_filter and not text_matches_any(title, transmission_aliases(transmission_filter)):
-        return False
+    if transmission_filter:
+        transmission_value = normalize_text(car.get("transmission") or "")
+        if transmission_value:
+            if not text_matches_any(transmission_value, transmission_aliases(transmission_filter)):
+                return False
 
     keyword_filter = normalize_text(filters.get("keyword", ""))
     if keyword_filter and not text_matches_any(f"{title} {location}", [keyword_filter]):

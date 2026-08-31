@@ -6,8 +6,12 @@ Monitors newly listed cars on OLX.in in **Kerala** and sends Telegram notificati
 
 - Checks Kerala car listings sorted by newest first
 - Sends Telegram alert only for **new** ads (no duplicates)
-- Uses Playwright in non-headless mode (helps avoid OLX blocks)
-- Runs automatically every 12 minutes
+- Reads listings from OLX's internal JSON API (captured via Playwright), with HTML parsing as a fallback
+- Runs headless by default, so it can run on a server (`HEADLESS=false` to watch the browser)
+- Caches resolved location slugs in `location_cache.json` (each city is resolved via browser only once)
+- Local filter safety net (`filters.py`) re-checks every listing against your filters before notifying
+- `seen_ads.json` is pruned automatically (default: entries older than 60 days)
+- Runs automatically every 5 minutes (configurable via `CHECK_INTERVAL_MINUTES`)
 
 ## Setup
 
@@ -55,9 +59,14 @@ playwright install chromium
 python main.py
 ```
 
-A Chromium window will open each time it checks. This is normal and helps avoid getting blocked by OLX.
+By default the browser runs headless (invisible). If OLX starts blocking checks, set `HEADLESS=false` in `.env` to run with a visible window.
 
 Press `Ctrl + C` to stop.
+
+Debug files written on each check:
+
+- `olx_api_debug.json` — the raw listings captured from OLX's JSON API (the preferred data source)
+- `olx_debug.html` — the rendered page HTML (used by the fallback parser)
 
 ## Notes
 
