@@ -69,3 +69,29 @@ def test_build_api_query_empty_filters():
     assert "location=2001160" in query
     assert "make" not in query
     assert "price_min" not in query
+
+
+def test_model_slug_is_brand_prefixed_and_hyphenated():
+    url = build_olx_url({"brand": "hyundai", "model": "creta"})
+    assert "model_eq_hyundai-creta" in url
+
+    url = build_olx_url({"brand": "maruti", "model": "grand vitara"})
+    assert "model_eq_maruti-suzuki-grand-vitara" in url
+
+    url = build_olx_url({"model": "hyundai-creta", "brand": "hyundai"})
+    assert "model_eq_hyundai-creta" in url
+
+
+def test_brand_is_normalized_to_olx_slug():
+    from olx_api import build_api_query, normalize_brand
+
+    assert normalize_brand("maruthi") == "maruti-suzuki"
+    assert normalize_brand("Maruti Suzuki") == "maruti-suzuki"
+    assert normalize_brand("hyundai") == "hyundai"
+    assert normalize_brand("land rover") == "land-rover"
+
+    query = build_api_query({"brand": "maruthi"}, "kochi_g4058873")
+    assert "make=maruti-suzuki" in query
+
+    url = build_olx_url({"brand": "maruthi"})
+    assert "make_eq_maruti-suzuki" in url

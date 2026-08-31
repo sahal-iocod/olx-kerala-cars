@@ -11,7 +11,28 @@ from olx_url import build_olx_url
 from olx_location import resolve_olx_location
 
 
+# Consecutive failed checks — used to back off politely
+# instead of hammering OLX when it is refusing us.
+_failure_count = 0
+
+
 def check_new_cars():
+    global _failure_count
+
+    if _failure_count > 0:
+        # Back off: skip cycles after failures
+        # (1 failure = skip 1 cycle, 2 = skip 3, 3+ = skip 7).
+        skip = min(2 ** _failure_count - 1, 7)
+        if getattr(check_new_cars, "_skipped", 0) < skip:
+            check_new_cars._skipped = getattr(check_new_cars, "_skipped", 0) + 1
+            print(
+                f"⏸️ Backing off after {_failure_count} failed "
+                f"check(s) — skipping cycle "
+                f"({check_new_cars._skipped}/{skip})"
+            )
+            return
+        check_new_cars._skipped = 0
+
     print("\n" + "=" * 50)
     print("🔍 Checking for new cars in Kerala...")
 
@@ -19,26 +40,37 @@ def check_new_cars():
     filters = load_filters()
     print(f"Filter settings: {filters}")
 
-    # Resolve the location once (cached in
-    # location_cache.json after the first time)
-    location_slug = resolve_olx_location(
-        (filters.get("location") or "").strip().lower()
-    )
+    try:
+        # Resolve the location once (cached in
+        # location_cache.json after the first time)
+        location_slug = resolve_olx_location(
+            (filters.get("location") or "").strip().lower()
+        )
 
-    # Build OLX URL using the current filters
-    olx_url = build_olx_url(filters, location_slug=location_slug)
-    print(f"🔗 OLX URL: {olx_url}")
+        # Build OLX URL using the current filters
+        olx_url = build_olx_url(filters, location_slug=location_slug)
+        print(f"🔗 OLX URL: {olx_url}")
+
+        # Scrape OLX — structured API data first,
+        # HTML parsing as fallback
+        cars = scrape_recent_cars(
+            olx_url,
+            filters=filters,
+            location_slug=location_slug,
+        )
+
+    except Exception as e:
+        _failure_count += 1
+        print(
+            f"❌ Check failed ({e}) — will back off "
+            f"before the next attempt"
+        )
+        return
+
+    _failure_count = 0
 
     # Load already-seen listings
     seen = load_seen_ads()
-
-    # Scrape OLX — structured API data first,
-    # HTML parsing as fallback
-    cars = scrape_recent_cars(
-        olx_url,
-        filters=filters,
-        location_slug=location_slug,
-    )
 
     new_count = 0
 
@@ -86,7 +118,10 @@ if __name__ == "__main__":
     scheduler.add_job(
         check_new_cars,
         "interval",
-        minutes=CHECK_INTERVAL_MINUTES
+        minutes=CHECK_INTERVAL_MINUTES,
+        # Random +/- up to 90s per run so checks don't fire
+        # at robotic exact intervals.
+        jitter=90,
     )
 
     try:

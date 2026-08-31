@@ -67,6 +67,10 @@ FILTERS_FILE = BASE_DIR / "filters.json"
 
 LOCATION_CACHE_FILE = BASE_DIR / "location_cache.json"
 
+# Browser cookies/session persisted between runs so OLX sees
+# a consistent returning visitor (helps avoid blocks).
+BROWSER_STATE_FILE = BASE_DIR / "browser_state.json"
+
 
 # =========================================================
 # Default filters
@@ -84,6 +88,7 @@ DEFAULT_FILTERS = {
     "model": "",
     "fuel": "",
     "transmission": "",
+    "seller_type": "",
     "keyword": "",
 }
 

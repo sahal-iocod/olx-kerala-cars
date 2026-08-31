@@ -1,13 +1,13 @@
 {
-  "location": "kochi",
+  "location": "kozhikode",
   "min_price": "",
   "max_price": "",
   "min_year": "2015",
-  "max_year": "2015",
+  "max_year": "2016",
   "min_km": "",
   "max_km": "",
-  "brand": "hyundai",
-  "model": "hyundai-creta",
+  "brand": "maruti suzuki",
+  "model": "swift",
   "fuel": "",
   "transmission": "",
   "keyword": ""

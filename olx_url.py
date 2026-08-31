@@ -1,6 +1,7 @@
 from urllib.parse import quote
 
 from config import OLX_BASE_URL
+from olx_api import normalize_brand
 from olx_location import resolve_olx_location
 
 
@@ -94,8 +95,10 @@ def build_olx_url(filters, location_slug=None):
     # BRAND
     # =====================================================
 
-    brand = clean_value(
-        filters.get("brand")
+    brand = normalize_brand(
+        clean_value(
+            filters.get("brand")
+        )
     )
 
     if brand:
@@ -112,8 +115,15 @@ def build_olx_url(filters, location_slug=None):
     )
 
     if model:
+        # OLX model slugs are brand-prefixed and hyphenated,
+        # e.g. "creta" + brand "hyundai" -> "hyundai-creta"
+        model_slug = model.replace(" ", "-")
+
+        if brand and not model_slug.startswith(brand):
+            model_slug = f"{brand}-{model_slug}"
+
         filter_values.append(
-            f"model_eq_{model}"
+            f"model_eq_{model_slug}"
         )
 
     # =====================================================

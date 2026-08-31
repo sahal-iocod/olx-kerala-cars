@@ -19,8 +19,10 @@ DEFAULT_FILTERS = {
     "min_km": "",
     "max_km": "",
     "brand": "",
+    "model": "",
     "fuel": "",
     "transmission": "",
+    "seller_type": "",
     "keyword": "",
 }
 
@@ -77,8 +79,18 @@ HTML_PAGE = """
         <div class="field"><label>Min KM</label><input name="min_km" type="number" min="0" /></div>
         <div class="field"><label>Max KM</label><input name="max_km" type="number" min="0" /></div>
         <div class="field"><label>Brand</label><input name="brand" placeholder="e.g. hyundai, maruti, toyota" /></div>
+        <div class="field"><label>Model</label><input name="model" placeholder="e.g. creta, swift, venue" /></div>
         <div class="field"><label>Fuel</label><input name="fuel" placeholder="e.g. petrol, diesel, cng" /></div>
         <div class="field"><label>Transmission</label><input name="transmission" placeholder="e.g. automatic, manual" /></div>
+        <div class="field"><label>Seller Type</label>
+          <select name="seller_type">
+            <option value="">Any seller</option>
+            <option value="owner">Individual owner (no dealers)</option>
+            <option value="verified">Verified seller</option>
+            <option value="verified_owner">Verified individual owner</option>
+            <option value="dealer">Dealer only</option>
+          </select>
+        </div>
         <div class="field"><label>Keyword</label><input name="keyword" placeholder="e.g. venue, city, swift" /></div>
       </div>
       <div class="actions">

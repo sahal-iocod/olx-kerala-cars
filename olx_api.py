@@ -37,6 +37,31 @@ def location_id_from_slug(slug: str) -> str | None:
     return match.group(1) if match else None
 
 
+# Common user spellings -> the slug OLX's API actually accepts
+# (verified: "maruti" alone returns 0 results, "maruti-suzuki" works).
+BRAND_ALIASES = {
+    "maruti": "maruti-suzuki",
+    "maruthi": "maruti-suzuki",
+    "maruti suzuki": "maruti-suzuki",
+    "maruthi suzuki": "maruti-suzuki",
+    "suzuki": "maruti-suzuki",
+    "mercedes": "mercedes-benz",
+    "benz": "mercedes-benz",
+    "mercedes benz": "mercedes-benz",
+    "vw": "volkswagen",
+    "land rover": "land-rover",
+    "rolls royce": "rolls-royce",
+    "aston martin": "aston-martin",
+}
+
+
+def normalize_brand(value) -> str:
+    v = re.sub(r"\s+", " ", str(value or "").strip().lower())
+    if not v:
+        return ""
+    return BRAND_ALIASES.get(v, v.replace(" ", "-"))
+
+
 def _to_int(value):
     if value is None:
         return None
@@ -49,7 +74,7 @@ def _to_int(value):
         return None
 
 
-def build_api_query(filters: dict, location_slug: str, size: int = 50) -> str:
+def build_api_query(filters: dict, location_slug: str, size: int = 100) -> str:
     """
     Build the query string for /api/relevance/v4/search
     from the web-UI filters.
@@ -69,7 +94,7 @@ def build_api_query(filters: dict, location_slug: str, size: int = 50) -> str:
         value = filters.get(key)
         return str(value).strip().lower() if value else ""
 
-    make = clean("brand")
+    make = normalize_brand(clean("brand"))
     if make:
         params["make"] = make
 

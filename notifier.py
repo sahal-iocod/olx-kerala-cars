@@ -24,6 +24,19 @@ def send_telegram_message(text: str) -> bool:
         return False
 
 
+def format_seller_line(car: dict) -> str:
+    seller = car.get("seller")
+    if not seller:
+        return ""
+
+    label = "Dealer" if seller == "dealer" else "Individual owner"
+
+    if car.get("verified"):
+        label += " ✅ verified"
+
+    return f"👤 Seller: {label}\n"
+
+
 def format_car_message(car: dict) -> str:
     return (
         f"🚗 <b>New Car in Kerala</b>\n\n"
@@ -32,6 +45,7 @@ def format_car_message(car: dict) -> str:
         f"📅 Year: {car.get('year', 'N/A')}\n"
         f"🛣️ KM: {car.get('km', 'N/A')}\n"
         f"📍 Location: {car.get('location', 'Kerala')}\n"
+        f"{format_seller_line(car)}"
         f"🕒 Posted: {car.get('posted', 'Recently')}\n\n"
         f"🔗 <a href=\"{car['url']}\">View on OLX</a>"
     )

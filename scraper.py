@@ -6,7 +6,7 @@ from html import unescape
 
 from playwright.sync_api import sync_playwright
 
-from config import HEADLESS, MAX_LISTINGS_TO_CHECK
+from config import BROWSER_STATE_FILE, HEADLESS, MAX_LISTINGS_TO_CHECK
 from olx_api import build_api_query
 
 USER_AGENT = (
@@ -342,6 +342,16 @@ def parse_api_listing(item: dict) -> dict | None:
                 location = locations_resolved[key]
                 break
 
+    # ---- seller info ----
+    is_dealer = bool(
+        item.get("is_business")
+    ) or bool(
+        item.get("dealer_showroom_enabled")
+    )
+
+    seller = "dealer" if is_dealer else "owner"
+    verified = bool(item.get("is_kyc_verified_user"))
+
     # ---- posted date ----
     posted = (
         item.get("display_date")
@@ -360,6 +370,8 @@ def parse_api_listing(item: dict) -> dict | None:
         "transmission": transmission,
         "brand": brand,
         "model": model,
+        "seller": seller,
+        "verified": verified,
         "location": location or "Kerala",
         "posted": str(posted),
         "url": f"https://www.olx.in/item/iid-{ad_id}",
@@ -369,8 +381,9 @@ def parse_api_listing(item: dict) -> dict | None:
 def fetch_api_listings(page, filters, location_slug):
     """
     Call OLX's internal search API from inside the already
-    loaded page. Returns the raw listing dicts, or [] on
-    any failure (the HTML fallback then takes over).
+    loaded page. Returns the raw listing dicts ([] when the
+    API worked but nothing matches the filters), or None on
+    failure (the HTML fallback then takes over).
     """
 
     try:
@@ -394,18 +407,20 @@ def fetch_api_listings(page, filters, location_slug):
         )
 
         if not isinstance(result, dict):
-            return []
+            return None
 
         data = result.get("data")
 
         if isinstance(data, list):
+            # May legitimately be [] — the API worked and
+            # nothing matches the filters right now.
             return data
 
-        return []
+        return None
 
     except Exception as e:
         print(f"⚠️ OLX API call failed: {e}")
-        return []
+        return None
 
 
 def scrape_recent_cars(
@@ -431,14 +446,22 @@ def scrape_recent_cars(
 
         browser = launch_browser(p)
 
-        context = browser.new_context(
-            viewport={
+        # Reuse cookies/session between runs so OLX sees a
+        # consistent returning visitor instead of a fresh
+        # unknown browser every few minutes.
+        context_kwargs = {
+            "viewport": {
                 "width": 1280,
                 "height": 800,
             },
-            user_agent=USER_AGENT,
-            locale="en-IN",
-        )
+            "user_agent": USER_AGENT,
+            "locale": "en-IN",
+        }
+
+        if BROWSER_STATE_FILE.exists():
+            context_kwargs["storage_state"] = str(BROWSER_STATE_FILE)
+
+        context = browser.new_context(**context_kwargs)
 
         page = context.new_page()
 
@@ -548,12 +571,31 @@ def scrape_recent_cars(
             # page (structured data)
             # -------------------------
 
-            if not api_items and filters is not None:
-                api_items = fetch_api_listings(
+            # The explicit call carries our filters, so it
+            # always takes priority. Passively captured
+            # responses (requests the page made on its own,
+            # not necessarily filtered) are only a backup.
+            if filters is not None:
+                explicit_items = fetch_api_listings(
                     page,
                     filters,
                     location_slug,
                 )
+
+                # None = the call failed (fall through to
+                # passive items / HTML). [] = the API worked
+                # and nothing matches the filters — that IS
+                # the answer; parsing the page instead would
+                # return unfiltered listings.
+                if explicit_items is not None:
+                    if not explicit_items:
+                        print(
+                            "📭 OLX API: no listings match "
+                            "the current filters"
+                        )
+                        return []
+
+                    api_items = explicit_items
 
             if api_items:
 
@@ -594,11 +636,27 @@ def scrape_recent_cars(
 
                     cars.append(car)
 
-                    if len(cars) >= MAX_LISTINGS_TO_CHECK:
-                        break
+                parsed_count = len(cars)
+
+                # Apply the local filters BEFORE capping, so
+                # filters the API can't handle server-side
+                # (model, transmission) don't starve the
+                # results — e.g. 19 Swifts hiding past a cap
+                # of 25 raw listings.
+                if filters is not None:
+                    from filters import matches_filters
+
+                    cars = [
+                        car
+                        for car in cars
+                        if matches_filters(car, filters)
+                    ]
+
+                cars = cars[:MAX_LISTINGS_TO_CHECK]
 
                 print(
-                    f"📦 Parsed {len(cars)} listings from OLX API"
+                    f"📦 OLX API: {parsed_count} parsed, "
+                    f"{len(cars)} match the filters"
                 )
 
                 return cars
@@ -687,7 +745,18 @@ def scrape_recent_cars(
                 f"❌ Scraping error: {e}"
             )
 
+            # Let the caller see the failure so it can
+            # back off instead of retrying full-speed.
+            raise
+
         finally:
+
+            try:
+                context.storage_state(
+                    path=str(BROWSER_STATE_FILE)
+                )
+            except Exception:
+                pass
 
             browser.close()
 
