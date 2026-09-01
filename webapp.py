@@ -9,6 +9,8 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template_string, request
 
 from filters import matches_filters
+from notifier import send_telegram_message
+from storage import load_seen_ads, save_seen_ads
 
 load_dotenv()
 
@@ -125,7 +127,7 @@ HTML_PAGE = """
 <html>
 <head>
   <meta charset="UTF-8" />
-  <title>OLX Filter Manager</title>
+  <title>Car Finder</title>
   <style>
     body { font-family: Arial, sans-serif; background: #f4f7fb; color: #1d2b36; margin: 0; padding: 32px; }
     .container { max-width: 900px; margin: 0 auto; background: white; border-radius: 14px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,.08); }
@@ -137,6 +139,8 @@ HTML_PAGE = """
     .actions { display: flex; gap: 12px; margin-top: 24px; flex-wrap: wrap; }
     button { border: none; background: #0a7cc3; color: white; padding: 12px 18px; border-radius: 8px; font-weight: 700; cursor: pointer; }
     button.secondary { background: #475569; }
+    button.danger { background: #b91c1c; }
+    .muted { color: #64748b; font-size: 13px; }
     .status { margin-top: 16px; font-weight: 600; }
     .note { color: #4b5563; margin-top: 8px; }
     .bot-panel { border: 1px solid #dfe6ee; border-radius: 10px; padding: 16px; margin-bottom: 24px; background: #f8fafc; }
@@ -150,7 +154,7 @@ HTML_PAGE = """
 </head>
 <body>
   <div class="container">
-    <h1>OLX Car Filter Manager</h1>
+    <h1>Car Finder</h1>
 
     <div class="bot-panel">
       <div class="bot-row">
@@ -158,6 +162,9 @@ HTML_PAGE = """
         <span id="botState">Checking…</span>
         <button type="button" id="startBtn">Start Bot</button>
         <button type="button" class="secondary" id="stopBtn">Stop Bot</button>
+        <button type="button" class="secondary" id="testTgBtn">Test Telegram</button>
+        <button type="button" class="danger" id="clearSeenBtn">Clear seen ads</button>
+        <span class="muted" id="seenCount"></span>
       </div>
       <pre id="botLog" class="bot-log"></pre>
     </div>
@@ -231,6 +238,7 @@ HTML_PAGE = """
     const botDot = document.getElementById('botDot');
     const botState = document.getElementById('botState');
     const botLog = document.getElementById('botLog');
+    const seenCount = document.getElementById('seenCount');
 
     const refreshBot = async () => {
       try {
@@ -238,6 +246,7 @@ HTML_PAGE = """
         const data = await response.json();
         botDot.className = 'dot ' + (data.running ? 'on' : 'off');
         botState.textContent = data.running ? 'Bot is running' : 'Bot is stopped';
+        if (typeof data.seen_count === 'number') seenCount.textContent = 'Seen ads: ' + data.seen_count;
         const atBottom = botLog.scrollTop + botLog.clientHeight >= botLog.scrollHeight - 10;
         botLog.textContent = data.log || '';
         if (atBottom) botLog.scrollTop = botLog.scrollHeight;
@@ -255,6 +264,25 @@ HTML_PAGE = """
 
     document.getElementById('stopBtn').addEventListener('click', async () => {
       const response = await fetch('/api/bot/stop', { method: 'POST' });
+      const result = await response.json();
+      statusBox.textContent = result.message;
+      await refreshBot();
+    });
+
+    document.getElementById('testTgBtn').addEventListener('click', async () => {
+      statusBox.textContent = 'Sending test message…';
+      const response = await fetch('/api/telegram/test', { method: 'POST' });
+      const result = await response.json();
+      statusBox.textContent = result.message;
+    });
+
+    document.getElementById('clearSeenBtn').addEventListener('click', async () => {
+      const ok = confirm(
+        'This forgets every listing the bot has already seen. ' +
+        'On the next check, ALL currently matching listings will be sent to Telegram again. Continue?'
+      );
+      if (!ok) return;
+      const response = await fetch('/api/seen/clear', { method: 'POST' });
       const result = await response.json();
       statusBox.textContent = result.message;
       await refreshBot();
@@ -307,7 +335,32 @@ def bot_stop_route():
 
 @app.route("/api/bot/status")
 def bot_status_route():
-    return jsonify({"running": bot_running(), "log": bot_log_tail()})
+    return jsonify({
+        "running": bot_running(),
+        "log": bot_log_tail(),
+        "seen_count": len(load_seen_ads()),
+    })
+
+
+@app.route("/api/seen/clear", methods=["POST"])
+def clear_seen_route():
+    count = len(load_seen_ads())
+    save_seen_ads({})
+    return jsonify({
+        "message": f"Cleared {count} seen ad(s). Matching listings will be re-sent on the next check.",
+        "cleared": count,
+    })
+
+
+@app.route("/api/telegram/test", methods=["POST"])
+def telegram_test_route():
+    ok = send_telegram_message("✅ Car Finder is connected to Telegram.")
+    if ok:
+        return jsonify({"message": "Test message sent — check Telegram.", "ok": True})
+    return jsonify({
+        "message": "Failed to send. Check TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID in .env (see server log).",
+        "ok": False,
+    }), 502
 
 
 @app.route("/api/test-match")
