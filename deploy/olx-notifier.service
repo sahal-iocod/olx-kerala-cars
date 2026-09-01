@@ -1,0 +1,49 @@
+# systemd unit for the OLX Kerala Car Notifier web app.
+# The web app starts the scraper bot as a child process
+# (BOT_AUTOSTART=true in .env), so this single unit runs both.
+#
+# Install:
+#   sudo cp deploy/olx-notifier.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now olx-notifier
+#
+# Logs:  journalctl -u olx-notifier -f      (web app)
+#        tail -f /opt/olx-notifier/bot.log  (scraper)
+
+[Unit]
+Description=OLX Kerala Car Notifier (web UI + Telegram bot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=olx
+Group=olx
+WorkingDirectory=/opt/olx-notifier
+EnvironmentFile=/opt/olx-notifier/.env
+# Playwright looks here for its browsers; Chrome itself is the
+# system google-chrome-stable package (channel="chrome" in scraper.py).
+Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/olx-notifier/.pw-browsers
+Environment=PYTHONUNBUFFERED=1
+
+# Single worker: the bot process handle lives in memory, so more
+# than one worker would mean more than one bot.
+ExecStart=/opt/olx-notifier/venv/bin/gunicorn \
+    --workers 1 --threads 4 \
+    --bind 127.0.0.1:5001 \
+    --timeout 60 \
+    --access-logfile - --error-logfile - \
+    webapp:app
+
+Restart=always
+RestartSec=10
+
+# Stop the whole control group (gunicorn + bot + any Chrome).
+KillMode=control-group
+TimeoutStopSec=30
+
+# Headless Chrome can spike; don't let a runaway take the box down.
+MemoryMax=1500M
+
+[Install]
+WantedBy=multi-user.target

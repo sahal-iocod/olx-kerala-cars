@@ -1,11 +1,16 @@
 import json
+import os
+import signal
 import subprocess
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template_string, request
 
 from filters import matches_filters
+
+load_dotenv()
 
 app = Flask(__name__)
 
@@ -32,12 +37,15 @@ def start_bot() -> str:
     log.write("\n===== bot started from web UI =====\n")
     log.flush()
 
-    # -u: unbuffered output so the log view updates live
+    # -u: unbuffered output so the log view updates live.
+    # start_new_session: the bot gets its own process group so
+    # stop_bot() can also kill any Chrome it has open mid-scrape.
     _bot_process = subprocess.Popen(
         [sys.executable, "-u", str(BASE_DIR / "main.py")],
         cwd=str(BASE_DIR),
         stdout=log,
         stderr=subprocess.STDOUT,
+        start_new_session=True,
     )
 
     return "Bot started."
@@ -50,11 +58,19 @@ def stop_bot() -> str:
         _bot_process = None
         return "Bot is not running."
 
-    _bot_process.terminate()
+    # Signal the whole group (bot + any headless Chrome).
+    def _signal_group(sig):
+        try:
+            os.killpg(os.getpgid(_bot_process.pid), sig)
+        except (ProcessLookupError, PermissionError):
+            _bot_process.send_signal(sig)
+
+    _signal_group(signal.SIGTERM)
     try:
         _bot_process.wait(timeout=10)
     except subprocess.TimeoutExpired:
-        _bot_process.kill()
+        _signal_group(signal.SIGKILL)
+        _bot_process.wait(timeout=5)
 
     _bot_process = None
     return "Bot stopped."
@@ -307,11 +323,30 @@ def test_match():
     return jsonify({"match": matches_filters(sample, filters)})
 
 
-if __name__ == "__main__":
-    import os
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() not in ("0", "false", "no", "off")
 
+
+# On a server (systemd) the bot should come up with the web app
+# rather than waiting for someone to press "Start Bot".
+if _env_bool("BOT_AUTOSTART", False):
+    print(start_bot())
+
+
+if __name__ == "__main__":
     # Port 5000 is taken by macOS AirPlay Receiver, so default to 5001.
     port = int(os.getenv("WEBAPP_PORT", "5001"))
+    # Bind to localhost by default; on a VPS put nginx (with
+    # basic auth) in front — this app has no login of its own.
+    host = os.getenv("WEBAPP_HOST", "127.0.0.1")
     # No reloader: it would restart the app on code edits and
     # orphan the bot child process.
-    app.run(host="0.0.0.0", port=port, debug=True, use_reloader=False)
+    app.run(
+        host=host,
+        port=port,
+        debug=_env_bool("FLASK_DEBUG", False),
+        use_reloader=False,
+    )

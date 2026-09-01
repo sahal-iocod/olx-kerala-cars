@@ -1,0 +1,12 @@
+# Keeps bot.log from growing forever.
+# Install: sudo cp deploy/logrotate-olx-notifier /etc/logrotate.d/olx-notifier
+/opt/olx-notifier/bot.log {
+    weekly
+    rotate 4
+    size 20M
+    compress
+    missingok
+    notifempty
+    copytruncate
+    su olx olx
+}
