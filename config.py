@@ -53,6 +53,40 @@ CHECK_INTERVAL_MINUTES = _env_int("CHECK_INTERVAL_MINUTES", 5)
 
 MAX_LISTINGS_TO_CHECK = _env_int("MAX_LISTINGS_TO_CHECK", 25)
 
+
+# =========================================================
+# Proxy (optional)
+# =========================================================
+#
+# OLX's edge (Akamai) scores datacenter IP ranges as bots, so a
+# VPS can be blocked no matter how the browser is configured.
+# Routing Chrome through a residential/mobile proxy gives it an
+# IP that passes. Leave PROXY_SERVER empty to go direct.
+#
+#   PROXY_SERVER=http://gate.example-proxy.com:8000
+#   PROXY_USERNAME=...
+#   PROXY_PASSWORD=...
+
+PROXY_SERVER = (os.getenv("PROXY_SERVER") or "").strip()
+PROXY_USERNAME = (os.getenv("PROXY_USERNAME") or "").strip()
+PROXY_PASSWORD = (os.getenv("PROXY_PASSWORD") or "").strip()
+
+
+def get_proxy_config() -> dict | None:
+    """
+    Playwright proxy dict, or None when no proxy is configured.
+    """
+    if not PROXY_SERVER:
+        return None
+
+    proxy: dict = {"server": PROXY_SERVER}
+
+    if PROXY_USERNAME:
+        proxy["username"] = PROXY_USERNAME
+        proxy["password"] = PROXY_PASSWORD
+
+    return proxy
+
 # Seen ads older than this are pruned so seen_ads.json stays bounded.
 SEEN_ADS_MAX_AGE_DAYS = _env_int("SEEN_ADS_MAX_AGE_DAYS", 60)
 

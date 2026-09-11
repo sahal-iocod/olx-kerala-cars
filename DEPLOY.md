@@ -13,7 +13,10 @@ internet ──> nginx :80/443 (basic auth) ──> gunicorn :5001 (webapp.py)
                                                         └─ headless Google Chrome
 ```
 
-One systemd service (`olx-notifier`) runs gunicorn; with `BOT_AUTOSTART=true`
+One systemd service (`olx-notifier`) runs gunicorn; with `BOT_AUTOSTART=true
+PROXY_SERVER=            # optional; set when OLX blocks the VPS IP
+PROXY_USERNAME=
+PROXY_PASSWORD=`
 the web app launches the bot itself, so both survive reboots.
 
 ## Quick install

@@ -6,7 +6,12 @@ from html import unescape
 
 from playwright.sync_api import sync_playwright
 
-from config import BROWSER_STATE_FILE, HEADLESS, MAX_LISTINGS_TO_CHECK
+from config import (
+    BROWSER_STATE_FILE,
+    HEADLESS,
+    MAX_LISTINGS_TO_CHECK,
+    get_proxy_config,
+)
 from olx_api import build_api_query
 
 USER_AGENT = (
@@ -538,6 +543,16 @@ def scrape_recent_cars(
             "user_agent": USER_AGENT,
             "locale": "en-IN",
         }
+
+        # Optional residential/mobile proxy. OLX's edge scores
+        # datacenter IPs as bots, so a VPS may need one.
+        proxy = get_proxy_config()
+
+        if proxy:
+            context_kwargs["proxy"] = proxy
+            print(
+                f"🛡️ Using proxy: {proxy['server']}"
+            )
 
         if BROWSER_STATE_FILE.exists():
             context_kwargs["storage_state"] = str(BROWSER_STATE_FILE)
