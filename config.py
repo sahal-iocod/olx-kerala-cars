@@ -45,6 +45,8 @@ def _env_int(name: str, default: int) -> int:
 
 # Run browsers without a visible window (needed for VPS / 24-7 use).
 # Set HEADLESS=false in .env if OLX starts blocking headless sessions.
+# On the VPS this works because the systemd unit runs under xvfb-run,
+# which provides a virtual display for headed Chrome.
 HEADLESS = _env_bool("HEADLESS", True)
 
 CHECK_INTERVAL_MINUTES = _env_int("CHECK_INTERVAL_MINUTES", 5)

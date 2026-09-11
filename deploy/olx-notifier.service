@@ -28,7 +28,12 @@ Environment=PYTHONUNBUFFERED=1
 
 # Single worker: the bot process handle lives in memory, so more
 # than one worker would mean more than one bot.
-ExecStart=/opt/olx-notifier/venv/bin/gunicorn \
+# Run under a virtual X display (Xvfb) so Chrome can start in
+# HEADED mode. OLX's edge (Akamai) blocks headless Chrome's
+# fingerprint; headed Chrome on a virtual display passes.
+# Set HEADLESS=false in .env to actually use it.
+ExecStart=/usr/bin/xvfb-run -a --server-args="-screen 0 1280x800x24" \
+    /opt/olx-notifier/venv/bin/gunicorn \
     --workers 1 --threads 4 \
     --bind 127.0.0.1:5001 \
     --timeout 60 \
@@ -42,8 +47,9 @@ RestartSec=10
 KillMode=control-group
 TimeoutStopSec=30
 
-# Headless Chrome can spike; don't let a runaway take the box down.
-MemoryMax=1500M
+# Chrome can spike; don't let a runaway take the box down.
+# Headed Chrome under Xvfb needs a little more headroom.
+MemoryMax=1800M
 
 [Install]
 WantedBy=multi-user.target

@@ -28,7 +28,7 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y --no-install-recommends \
     python3 python3-venv python3-pip git curl gnupg ca-certificates \
-    nginx apache2-utils fonts-liberation
+    nginx apache2-utils fonts-liberation xvfb
 
 echo "==> 2/6 Google Chrome (stable)"
 if ! command -v google-chrome >/dev/null 2>&1; then

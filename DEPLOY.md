@@ -55,7 +55,7 @@ Open `http://<vps-ip>/`, log in, confirm the green "Bot is running" dot.
 ```
 TELEGRAM_BOT_TOKEN=...
 TELEGRAM_CHAT_ID=...
-HEADLESS=true            # must stay true — no display on a VPS
+HEADLESS=false           # headed Chrome under Xvfb; OLX blocks headless
 CHECK_INTERVAL_MINUTES=5
 WEBAPP_HOST=127.0.0.1    # nginx fronts it; never expose 5001 directly
 WEBAPP_PORT=5001
@@ -111,5 +111,9 @@ Port 5001 is bound to localhost only and is not opened.
 - **"Access Denied" in the log** — OLX served an edge block page. The bot now
   detects this, fails the check (so it backs off instead of reporting zero new
   cars) and clears `browser_state.json` so a block cookie isn't replayed.
-  If it persists, increase `CHECK_INTERVAL_MINUTES` (10–15). `HEADLESS=false`
-  is not an option on a VPS without Xvfb.
+  The usual cause is the headless Chrome fingerprint. The systemd unit runs
+  gunicorn under `xvfb-run`, so a real display exists — set `HEADLESS=false`
+  in `.env` and restart to use headed Chrome, which Akamai scores far lower.
+  If it still persists, increase `CHECK_INTERVAL_MINUTES` (10–15). Beyond
+  that the remaining lever is a residential proxy or running the checker from
+  a home network, since datacenter IP ranges are scored as bots.
