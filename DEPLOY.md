@@ -93,11 +93,23 @@ Port 5001 is bound to localhost only and is not opened.
 
 ## Troubleshooting
 
-- **`ERR_HTTP2_PROTOCOL_ERROR` / empty listings** — Chrome isn't installed
-  or the fallback Chromium is being used. `google-chrome --version` must work
-  for the `olx` user.
+- **`ERR_HTTP2_PROTOCOL_ERROR` / empty listings** — OLX's edge (Akamai)
+  fingerprints the HTTP/2 connection and kills it with `INTERNAL_ERROR`,
+  while the same request over HTTP/1.1 answers `200 OK`. The scraper now
+  launches Chrome with `--disable-http2` to avoid this. Confirm from the VPS:
+
+  ```bash
+  curl -s -o /dev/null -w "%{http_code}\n" https://www.olx.in/            # 000 = h2 blocked
+  curl -s --http1.1 -o /dev/null -w "%{http_code}\n" https://www.olx.in/  # 200 = IP is fine
+  ```
+
+  Also check Chrome is present — `google-chrome --version` must work for the
+  `olx` user, or the bundled Chromium gets used instead.
 - **Bot stopped after reboot** — check `BOT_AUTOSTART=true` in `.env`.
 - **OOM / killed** — raise `MemoryMax` in the unit or add swap:
   `fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile`.
-- **OLX blocking checks** — increase `CHECK_INTERVAL_MINUTES` (10–15).
-  `HEADLESS=false` is not an option on a VPS without Xvfb.
+- **"Access Denied" in the log** — OLX served an edge block page. The bot now
+  detects this, fails the check (so it backs off instead of reporting zero new
+  cars) and clears `browser_state.json` so a block cookie isn't replayed.
+  If it persists, increase `CHECK_INTERVAL_MINUTES` (10–15). `HEADLESS=false`
+  is not an option on a VPS without Xvfb.

@@ -16,6 +16,16 @@ USER_AGENT = (
 )
 
 
+# Akamai (OLX's edge) fingerprints the HTTP/2 connection
+# and kills it with INTERNAL_ERROR for clients it scores as
+# bots — the same request over HTTP/1.1 answers 200 OK.
+# Disabling HTTP/2 in Chrome sidesteps that check entirely.
+BROWSER_ARGS = [
+    "--disable-http2",
+    "--disable-blink-features=AutomationControlled",
+]
+
+
 def launch_browser(p):
     """
     Launch the real installed Chrome when available.
@@ -28,11 +38,44 @@ def launch_browser(p):
         return p.chromium.launch(
             headless=HEADLESS,
             channel="chrome",
+            args=BROWSER_ARGS,
         )
     except Exception:
         return p.chromium.launch(
             headless=HEADLESS,
+            args=BROWSER_ARGS,
         )
+
+
+class BlockedByOLX(Exception):
+    """Raised when OLX's edge serves a block page."""
+
+
+BLOCK_TITLE_MARKERS = (
+    "access denied",
+    "attention required",
+    "just a moment",
+    "pardon our interruption",
+)
+
+
+def looks_blocked(title: str, html: str) -> bool:
+    """
+    True when the page we got back is an edge block page
+    rather than real OLX content.
+    """
+    lowered = (title or "").strip().lower()
+
+    if any(m in lowered for m in BLOCK_TITLE_MARKERS):
+        return True
+
+    snippet = (html or "")[:4000].lower()
+
+    return (
+        "reference&#32;#" in snippet
+        or "reference #" in snippet
+        or "errors.edgesuite.net" in snippet
+    )
 
 
 def clean_text(value: str | None) -> str:
@@ -476,6 +519,10 @@ def scrape_recent_cars(
     # API while the page loads (e.g. on pagination).
     api_items = []
 
+    # Set when OLX's edge serves a block page instead of
+    # real content, so we don't persist a block cookie.
+    blocked = False
+
     with sync_playwright() as p:
 
         browser = launch_browser(p)
@@ -565,6 +612,14 @@ def scrape_recent_cars(
             print(
                 "💾 Saved page HTML to: olx_debug.html"
             )
+
+            if looks_blocked(page.title(), html):
+                blocked = True
+                raise BlockedByOLX(
+                    "OLX edge served a block page — "
+                    "treating this check as failed instead "
+                    "of reporting zero new cars."
+                )
 
             # -------------------------
             # Find listing links
@@ -796,6 +851,12 @@ def scrape_recent_cars(
                 f"📦 Found {len(cars)} real OLX listings"
             )
 
+        except BlockedByOLX as e:
+
+            print(f"🚫 {e}")
+
+            raise
+
         except Exception as e:
 
             print(
@@ -808,12 +869,27 @@ def scrape_recent_cars(
 
         finally:
 
-            try:
-                context.storage_state(
-                    path=str(BROWSER_STATE_FILE)
-                )
-            except Exception:
-                pass
+            # Never persist cookies from a blocked run — a
+            # block cookie would be replayed on every later
+            # check and keep us blocked.
+            if not blocked:
+                try:
+                    context.storage_state(
+                        path=str(BROWSER_STATE_FILE)
+                    )
+                except Exception:
+                    pass
+            else:
+                try:
+                    BROWSER_STATE_FILE.unlink()
+                    print(
+                        "🧹 Cleared saved browser state "
+                        "after block."
+                    )
+                except FileNotFoundError:
+                    pass
+                except Exception:
+                    pass
 
             browser.close()
 
