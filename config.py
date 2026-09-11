@@ -49,7 +49,7 @@ def _env_int(name: str, default: int) -> int:
 # which provides a virtual display for headed Chrome.
 HEADLESS = _env_bool("HEADLESS", True)
 
-CHECK_INTERVAL_MINUTES = _env_int("CHECK_INTERVAL_MINUTES", 5)
+CHECK_INTERVAL_MINUTES = _env_int("CHECK_INTERVAL_MINUTES", 15)
 
 MAX_LISTINGS_TO_CHECK = _env_int("MAX_LISTINGS_TO_CHECK", 25)
 
@@ -103,9 +103,19 @@ FILTERS_FILE = BASE_DIR / "filters.json"
 
 LOCATION_CACHE_FILE = BASE_DIR / "location_cache.json"
 
-# Browser cookies/session persisted between runs so OLX sees
-# a consistent returning visitor (helps avoid blocks).
+# Legacy cookie jar, superseded by BROWSER_PROFILE_DIR below.
+# Still named here so older installs can be cleaned up.
 BROWSER_STATE_FILE = BASE_DIR / "browser_state.json"
+
+# Full Chrome profile reused between runs.
+#
+# A storage_state snapshot replayed into a fresh browser is
+# itself a bot signal: Akamai's _abck cookie is meant to be
+# refreshed in place by the browser that earned it, not
+# restored from a file. Keeping the real profile directory lets
+# that cookie age normally and carries localStorage/IndexedDB
+# along with it.
+BROWSER_PROFILE_DIR = BASE_DIR / "browser_profile"
 
 
 # =========================================================

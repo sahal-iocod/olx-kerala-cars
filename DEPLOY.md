@@ -113,7 +113,8 @@ Port 5001 is bound to localhost only and is not opened.
   `fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile`.
 - **"Access Denied" in the log** — OLX served an edge block page. The bot now
   detects this, fails the check (so it backs off instead of reporting zero new
-  cars) and clears `browser_state.json` so a block cookie isn't replayed.
+  cars) and deletes the `browser_profile/` directory so a burned cookie isn't
+  replayed on the next check.
   The usual cause is the headless Chrome fingerprint. The systemd unit runs
   gunicorn under `xvfb-run`, so a real display exists — set `HEADLESS=false`
   in `.env` and restart to use headed Chrome, which Akamai scores far lower.

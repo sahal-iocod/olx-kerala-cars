@@ -1,12 +1,14 @@
 import json
 import random
 import re
+import shutil
 import time
 from html import unescape
 
 from playwright.sync_api import sync_playwright
 
 from config import (
+    BROWSER_PROFILE_DIR,
     BROWSER_STATE_FILE,
     HEADLESS,
     MAX_LISTINGS_TO_CHECK,
@@ -50,6 +52,111 @@ def launch_browser(p):
             headless=HEADLESS,
             args=BROWSER_ARGS,
         )
+
+
+OLX_HOME_URL = "https://www.olx.in/"
+
+
+def clear_stale_profile_locks() -> None:
+    """
+    Drop Chrome's singleton locks left behind by a hard kill.
+
+    The web UI's "Stop Bot" SIGKILLs the whole process group, so
+    Chrome can die mid-scrape without releasing these. A stale
+    lock makes the next launch refuse the profile.
+    """
+    for name in (
+        "SingletonLock",
+        "SingletonCookie",
+        "SingletonSocket",
+    ):
+        try:
+            (BROWSER_PROFILE_DIR / name).unlink()
+        except (FileNotFoundError, OSError):
+            pass
+
+
+def launch_persistent_session(p):
+    """
+    Launch Chrome on a profile directory kept between runs.
+
+    Unlike a fresh context seeded with storage_state, this keeps
+    the browser that Akamai issued its cookies to, so those
+    cookies are refreshed in place instead of being replayed
+    into a brand new browser on every check.
+    """
+    clear_stale_profile_locks()
+
+    kwargs = {
+        "user_data_dir": str(BROWSER_PROFILE_DIR),
+        "headless": HEADLESS,
+        "args": BROWSER_ARGS + [
+            # The profile is now permanent, so cap the cache it
+            # accumulates — the VPS unit runs under MemoryMax
+            # and a small disk.
+            "--disk-cache-size=104857600",
+        ],
+        "viewport": {
+            "width": 1280,
+            "height": 800,
+        },
+        "user_agent": USER_AGENT,
+        "locale": "en-IN",
+        "timezone_id": "Asia/Kolkata",
+    }
+
+    # Optional residential/mobile proxy. OLX's edge scores
+    # datacenter IPs as bots, so a VPS may need one.
+    proxy = get_proxy_config()
+
+    if proxy:
+        kwargs["proxy"] = proxy
+        print(f"🛡️ Using proxy: {proxy['server']}")
+
+    try:
+        return p.chromium.launch_persistent_context(
+            channel="chrome",
+            **kwargs,
+        )
+    except Exception:
+        return p.chromium.launch_persistent_context(**kwargs)
+
+
+def warm_up(page) -> None:
+    """
+    Visit the OLX homepage and move around a little before
+    loading the filtered search.
+
+    Akamai's script wants to see a normal entry point and some
+    real input events before it hands out a good cookie; landing
+    cold on a deep filtered URL every few minutes does not look
+    like a person shopping for a car.
+    """
+    print("🔥 Warming up on the OLX homepage...")
+
+    page.goto(
+        OLX_HOME_URL,
+        wait_until="domcontentloaded",
+        timeout=60000,
+    )
+
+    time.sleep(random.uniform(2.5, 5.0))
+
+    try:
+        # A few mouse moves and a scroll, so the sensor has
+        # genuine pointer/scroll events to record.
+        for _ in range(random.randint(2, 4)):
+            page.mouse.move(
+                random.randint(80, 1200),
+                random.randint(80, 700),
+            )
+            time.sleep(random.uniform(0.2, 0.6))
+
+        page.mouse.wheel(0, random.randint(300, 900))
+        time.sleep(random.uniform(1.5, 3.0))
+    except Exception:
+        # Warm-up is best effort — never fail the check on it.
+        pass
 
 
 class BlockedByOLX(Exception):
@@ -530,36 +637,20 @@ def scrape_recent_cars(
 
     with sync_playwright() as p:
 
-        browser = launch_browser(p)
-
-        # Reuse cookies/session between runs so OLX sees a
-        # consistent returning visitor instead of a fresh
-        # unknown browser every few minutes.
-        context_kwargs = {
-            "viewport": {
-                "width": 1280,
-                "height": 800,
-            },
-            "user_agent": USER_AGENT,
-            "locale": "en-IN",
-        }
-
-        # Optional residential/mobile proxy. OLX's edge scores
-        # datacenter IPs as bots, so a VPS may need one.
-        proxy = get_proxy_config()
-
-        if proxy:
-            context_kwargs["proxy"] = proxy
-            print(
-                f"🛡️ Using proxy: {proxy['server']}"
-            )
-
+        # Cookies now live in the Chrome profile itself, so the
+        # old snapshot file is dead weight.
         if BROWSER_STATE_FILE.exists():
-            context_kwargs["storage_state"] = str(BROWSER_STATE_FILE)
+            try:
+                BROWSER_STATE_FILE.unlink()
+            except OSError:
+                pass
 
-        context = browser.new_context(**context_kwargs)
+        # Reuse the same Chrome profile between runs so OLX sees
+        # a consistent returning visitor instead of a fresh
+        # unknown browser every few minutes.
+        context = launch_persistent_session(p)
 
-        page = context.new_page()
+        page = context.pages[0] if context.pages else context.new_page()
 
         def capture_api_response(response):
             try:
@@ -585,6 +676,8 @@ def scrape_recent_cars(
             # -------------------------
             # Open filtered OLX URL
             # -------------------------
+
+            warm_up(page)
 
             print("🌐 Opening OLX filtered cars page...")
             print(f"🔗 URL: {url}")
@@ -884,28 +977,21 @@ def scrape_recent_cars(
 
         finally:
 
-            # Never persist cookies from a blocked run — a
-            # block cookie would be replayed on every later
-            # check and keep us blocked.
-            if not blocked:
-                try:
-                    context.storage_state(
-                        path=str(BROWSER_STATE_FILE)
-                    )
-                except Exception:
-                    pass
-            else:
-                try:
-                    BROWSER_STATE_FILE.unlink()
-                    print(
-                        "🧹 Cleared saved browser state "
-                        "after block."
-                    )
-                except FileNotFoundError:
-                    pass
-                except Exception:
-                    pass
+            # Closing the context is what flushes the profile
+            # to disk, so a good run needs nothing else.
+            context.close()
 
-            browser.close()
+            # A blocked run leaves a burned cookie in the
+            # profile. Keeping it would replay the block on
+            # every later check, so start the next one clean.
+            if blocked:
+                shutil.rmtree(
+                    BROWSER_PROFILE_DIR,
+                    ignore_errors=True,
+                )
+                print(
+                    "🧹 Discarded the browser profile "
+                    "after block."
+                )
 
     return cars

@@ -11,6 +11,7 @@ venv/
 seen_ads.json
 location_cache.json
 browser_state.json
+browser_profile/
 bot.log
 
 # Debug artifacts written on each scrape
